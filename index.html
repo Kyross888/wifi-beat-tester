@@ -395,9 +395,9 @@ function renderConn(){
     if (c.downlink != null) html += row("Estimated downlink", `${c.downlink} Mbps`);
     if (c.rtt != null) html += row("Estimated round-trip", `${c.rtt} ms`);
     if (c.saveData) html += row("Data saver", "On");
-  } else {
-    html += row("Details", "Not provided by this browser");
   }
+  const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+  if (plat) html += row("Device", esc(plat));
   box.innerHTML = html;
   note.hidden = false;
 }
@@ -455,10 +455,12 @@ async function doWifi(){
     renderWifi(w);               // real Wi-Fi name, signal, band, link speed
   } else {
     renderConn();                // browser-only info
-    $("#wifinote").innerHTML =
-      "Websites cannot read your Wi-Fi name on their own. To show it, run <b>python wifi_helper.py</b> " +
-      "on this PC (see README), keep it open, then click GO again. " +
-      "If it is running, allow this site to access local devices when your browser asks.";
+    $("#wifi").insertAdjacentHTML("beforeend", row("Wi-Fi name", "Private (browsers hide it)"));
+    const n = $("#wifinote");
+    n.style.color = "var(--muted, #9aa0b4)";
+    n.innerHTML = "Your internet provider, location and speed are shown in the other boxes. " +
+      "Want your Wi-Fi name too? <a href=\"https://github.com/Kyross888/wifi-beat-tester\" target=\"_blank\" rel=\"noopener\" style=\"color:inherit;text-decoration:underline\">Get the optional helper</a>.";
+    n.hidden = false;
   }
   setStep("wifi", "done");
 }
