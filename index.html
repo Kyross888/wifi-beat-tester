@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Network Tester</title>
+<style>
+  :root{
+    --bg:#07060d; --panel:rgba(16,12,30,.62); --panel2:rgba(255,255,255,.07); --line:rgba(255,255,255,.13);
+    --text:#f4f1ff; --muted:#a79fc4; --down:#ff5fa2; --up:#ffa94d;
+    --good:#34d399; --warn:#fbbf24; --bad:#f87171; --glow:#ff7a3d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%}
+  body{background:var(--bg);color:var(--text);
+       font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;line-height:1.4;overflow-x:hidden}
+  #bokeh{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block}
+  .vig{position:fixed;inset:0;z-index:0;pointer-events:none;
+       background:radial-gradient(ellipse at center,transparent 35%,rgba(0,0,0,.75) 100%)}
+  .wrap{position:relative;z-index:1;max-width:1040px;margin:0 auto;padding:22px 16px 48px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:20px;margin:0;letter-spacing:4px;text-transform:uppercase;font-weight:700;
+     text-shadow:0 0 18px var(--glow)}
+  .sub{color:var(--muted);font-size:12px}
+  #mute{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:99px;
+        padding:6px 14px;font-size:13px;cursor:pointer;backdrop-filter:blur(8px)}
+  #mute:hover{border-color:var(--down)}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;
+        backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 30px rgba(0,0,0,.35)}
+
+  /* ---- center stage: GO disc + beat visualizer ---- */
+  .stage{display:flex;flex-direction:column;align-items:center;margin:6px 0 10px}
+  .gobox{position:relative;width:320px;height:320px;max-width:92vw;max-height:92vw;will-change:transform}
+  #viz{position:absolute;inset:0;width:100%;height:100%}
+  .gobox svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);pointer-events:none}
+  .prog{fill:none;stroke:url(#grad);stroke-width:3.5;stroke-linecap:round;
+        stroke-dasharray:346;stroke-dashoffset:346;transition:stroke-dashoffset .35s ease;
+        filter:drop-shadow(0 0 5px var(--glow))}
+  .track{fill:none;stroke:rgba(255,255,255,.1);stroke-width:3.5}
+  #go{position:absolute;left:50%;top:50%;width:50%;height:50%;transform:translate(-50%,-50%);
+      border-radius:50%;border:0;background:#fff;color:#0b0a12;cursor:pointer;
+      font:italic 800 44px "Segoe Script","Brush Script MT","Lucida Handwriting",cursive;
+      letter-spacing:1px;box-shadow:0 0 0 5px rgba(255,255,255,.12),0 0 34px 6px rgba(255,110,90,.55),0 0 70px 14px rgba(190,70,255,.28);
+      transition:transform .12s, box-shadow .2s}
+  #go:hover:not(:disabled){transform:translate(-50%,-50%) scale(1.04)}
+  #go:active:not(:disabled){transform:translate(-50%,-50%) scale(.96)}
+  #go:disabled{cursor:default;font:italic 700 18px "Segoe Script","Brush Script MT",cursive;color:#3a3450}
+  #go:focus-visible{outline:3px solid var(--up);outline-offset:4px}
+  .nowplaying{font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--muted);height:16px}
+  .nowplaying.on{color:var(--down);text-shadow:0 0 10px var(--down)}
+
+  .speeds{display:flex;gap:48px;flex-wrap:wrap;justify-content:center;margin-top:8px}
+  .speed{text-align:center}
+  .speed label{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:2px}
+  .speed .big{font-size:54px;font-weight:200;line-height:1.1;font-variant-numeric:tabular-nums}
+  .speed.down .big{text-shadow:0 0 22px rgba(255,95,162,.55)}
+  .speed.up .big{text-shadow:0 0 22px rgba(255,169,77,.55)}
+  .speed.down label b{color:var(--down)} .speed.up label b{color:var(--up)}
+  .mini{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;color:var(--muted);font-size:14px;margin:8px 0 12px}
+  .mini b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+  .steps{list-style:none;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;padding:0;margin:0 0 14px}
+  .steps li{font-size:12px;padding:3px 12px;border-radius:99px;border:1px solid var(--line);color:var(--muted);background:rgba(0,0,0,.25)}
+  .steps li.on{border-color:var(--down);color:var(--text);box-shadow:0 0 10px rgba(255,95,162,.5)}
+  .steps li.done{border-color:var(--good);color:var(--good)}
+  .steps li.fail{border-color:var(--bad);color:var(--bad)}
+  .chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;max-width:640px;margin:0 auto}
+  .chip{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;backdrop-filter:blur(8px)}
+  .chip span{display:block;color:var(--muted);font-size:12px}
+  .chip b{font-size:14px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:16px}
+  h2{font-size:12px;margin:0 0 12px;color:var(--muted);text-transform:uppercase;letter-spacing:2px;font-weight:600}
+  .row{display:flex;justify-content:space-between;gap:14px;padding:7px 0;border-top:1px solid var(--line);font-size:14px}
+  .row:first-of-type{border-top:0}
+  .row span{color:var(--muted);flex:none} .row b{font-weight:600;text-align:right;word-break:break-word}
+  .bars{display:inline-flex;gap:2px;align-items:flex-end;height:14px;margin-right:8px;vertical-align:-1px}
+  .bars i{width:4px;background:var(--line);border-radius:1px}
+  .bars i:nth-child(1){height:4px}.bars i:nth-child(2){height:7px}
+  .bars i:nth-child(3){height:10px}.bars i:nth-child(4){height:14px}
+  .bars i.f{background:var(--good)}
+  .note{margin:10px 0 0;font-size:13px;color:var(--warn)}
+  canvas#chart{width:100%;height:150px;display:block}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;text-align:center}
+  .stats div{background:var(--panel2);border-radius:8px;padding:6px 2px;font-size:12px;color:var(--muted)}
+  .stats b{display:block;color:var(--text);font-size:15px;font-variant-numeric:tabular-nums}
+  details{margin-top:16px}
+  summary{cursor:pointer;color:var(--muted);font-size:14px}
+  .set{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px}
+  .set label{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+  .set input{background:rgba(0,0,0,.4);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:14px;width:190px}
+  .foot{margin-top:22px;font-size:12px;color:var(--muted);text-align:center}
+</style>
+</head>
+<body>
+<canvas id="bokeh"></canvas>
+<div class="vig"></div>
+
+<div class="wrap">
+  <header>
+    <h1>Network Tester</h1>
+    <button id="mute" type="button">&#128266; Beat: ON</button>
+  </header>
+  <div class="sub">Press GO: your beat plays while your connection is tested.</div>
+
+  <section class="stage">
+    <div class="gobox" id="gobox">
+      <canvas id="viz"></canvas>
+      <svg viewBox="0 0 200 200" aria-hidden="true">
+        <defs>
+          <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#ffa94d"/><stop offset=".5" stop-color="#ff5fa2"/><stop offset="1" stop-color="#a855f7"/>
+          </linearGradient>
+        </defs>
+        <circle class="track" cx="100" cy="100" r="55"/>
+        <circle class="prog" id="ring" cx="100" cy="100" r="55"/>
+      </svg>
+      <button id="go" type="button">GO</button>
+    </div>
+    <div class="nowplaying" id="np">&nbsp;</div>
+
+    <div class="speeds">
+      <div class="speed down"><label><b>&#9660;</b> Download Mbps</label><div class="big" id="down">&mdash;</div></div>
+      <div class="speed up"><label><b>&#9650;</b> Upload Mbps</label><div class="big" id="up">&mdash;</div></div>
+    </div>
+    <div class="mini">
+      <span>Ping <b id="pingv">&mdash;</b> ms</span>
+      <span>Jitter <b id="jitv">&mdash;</b> ms</span>
+      <span>Packet loss <b id="lossv">&mdash;</b></span>
+    </div>
+    <ul class="steps" id="steps">
+      <li data-s="wifi">Network</li><li data-s="ping">Ping</li>
+      <li data-s="down">Download</li><li data-s="up">Upload</li>
+    </ul>
+    <div class="chips" id="rate"></div>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Your connection</h2>
+      <div id="wifi"><div class="row"><span>Status</span><b>Click GO to check</b></div></div>
+      <p class="note" id="wifinote" hidden></p>
+    </section>
+
+    <section class="card">
+      <h2>Internet connection</h2>
+      <div id="net">
+        <div class="row"><span>Provider (ISP)</span><b id="isp">&mdash;</b></div>
+        <div class="row"><span>Public IP</span><b id="ip">&mdash;</b></div>
+        <div class="row"><span>Location</span><b id="loc">&mdash;</b></div>
+        <div class="row"><span>Test server</span><b id="srv">&mdash;</b></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Latency per ping (ms)</h2>
+      <canvas id="chart"></canvas>
+      <div class="stats">
+        <div>Min<b id="smin">&mdash;</b></div><div>Average<b id="savg">&mdash;</b></div>
+        <div>Max<b id="smax">&mdash;</b></div><div>Sent / got<b id="scnt">&mdash;</b></div>
+      </div>
+    </section>
+  </div>
+
+  <details>
+    <summary>Settings</summary>
+    <div class="set">
+            <label>Number of pings<input id="count" type="number" min="1" max="100" value="10"></label>
+    </div>
+  </details>
+  <p class="foot">Speed results are a rough guide: they depend on the test server, other devices on your Wi-Fi, and what else your PC is doing.</p>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const mbps = (bytes, secs) => bytes * 8 / secs / 1e6;
+const f1 = n => (n == null || isNaN(n)) ? "—" : n.toFixed(1);
+const f2 = n => (n == null || isNaN(n)) ? "—" : n.toFixed(2);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+let busy = false;
+let R = {};                 // results of the current run
+let pings = [];             // [{ms|null}]
+
+const RING_LEN = 346;
+function setRing(p){ $("#ring").style.strokeDashoffset = RING_LEN * (1 - Math.max(0, Math.min(1, p))); }
+function setStep(name, state){
+  document.querySelectorAll("#steps li").forEach(li => {
+    if (li.dataset.s === name) li.className = state;
+  });
+}
+function row(label, valueHtml){ return `<div class="row"><span>${label}</span><b>${valueHtml}</b></div>`; }
+
+/* =====================================================================
+   TRAP BEAT  (synthesized with the Web Audio API - no audio files needed)
+   140 BPM, 808 kick/bass, clap, rolling hi-hats
+   ===================================================================== */
+const BPM = 140, S16 = 60 / BPM / 4;
+const KICKS = [0, 7, 10, 16, 23, 26, 30];
+const CLAPS = [8, 24];
+const ROLLS = [14, 15, 30, 31];
+const BASS_NOTES = [43.65, 43.65, 51.91, 41.2];   // F1, F1, Ab1, E1 per half-bar group
+let AC = null, master, comp, analyser, freqData, noiseBuf;
+let beatTimer = null, nextT = 0, stepN = 0, muted = false, playing = false;
+
+function initAudio(){
+  if (AC) return true;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return false;
+  AC = new Ctx();
+  master = AC.createGain(); master.gain.value = 0;
+  comp = AC.createDynamicsCompressor();
+  analyser = AC.createAnalyser(); analyser.fftSize = 256; analyser.smoothingTimeConstant = 0.78;
+  master.connect(comp); comp.connect(analyser); analyser.connect(AC.destination);
+  freqData = new Uint8Array(analyser.frequencyBinCount);
+  noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return true;
+}
+
+function k808(t, note){
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(note * 3.2, t);
+  o.frequency.exponentialRampToValueAtTime(note, t + 0.09);
+  g.gain.setValueAtTime(1.0, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.9);
+  // click for punch
+  const c = AC.createOscillator(), cg = AC.createGain();
+  c.type = "triangle"; c.frequency.setValueAtTime(220, t);
+  c.frequency.exponentialRampToValueAtTime(60, t + 0.03);
+  cg.gain.setValueAtTime(0.5, t); cg.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+  c.connect(cg); cg.connect(master); c.start(t); c.stop(t + 0.06);
+}
+function clap(t){
+  for (let i = 0; i < 3; i++){
+    const s = AC.createBufferSource(); s.buffer = noiseBuf;
+    const f = AC.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1700; f.Q.value = 0.9;
+    const g = AC.createGain(), tt = t + i * 0.011;
+    g.gain.setValueAtTime(0.55, tt);
+    g.gain.exponentialRampToValueAtTime(0.001, tt + (i === 2 ? 0.2 : 0.02));
+    s.connect(f); f.connect(g); g.connect(master); s.start(tt, Math.random()); s.stop(tt + 0.25);
+  }
+}
+function hat(t, vol){
+  const s = AC.createBufferSource(); s.buffer = noiseBuf;
+  const f = AC.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 7500;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+  s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random()); s.stop(t + 0.06);
+}
+function playStep(n, t){
+  const s = n % 32;
+  if (KICKS.includes(s)) k808(t, BASS_NOTES[Math.floor(s / 8)]);
+  if (CLAPS.includes(s)) clap(t);
+  hat(t, s % 2 === 0 ? 0.3 : 0.17);
+  if (ROLLS.includes(s)) hat(t + S16 / 2, 0.2);
+}
+function scheduler(){
+  while (nextT < AC.currentTime + 0.12){
+    playStep(stepN, nextT);
+    nextT += S16; stepN++;
+  }
+}
+let HAS_SONG = true;      // beat.mp3 sits next to index.html; falls back to the built-in beat if it can't load
+let song = null;
+function startBeat(){
+  if (!initAudio()) return;
+  AC.resume();
+  playing = true;
+  master.gain.cancelScheduledValues(AC.currentTime);
+  master.gain.setTargetAtTime(muted ? 0 : 0.85, AC.currentTime, 0.05);
+  if (HAS_SONG){
+    if (!song){
+      song = new Audio("beat.mp3"); song.loop = true;
+      song.addEventListener("error", () => {      // beat.mp3 missing: use the built-in trap beat instead
+        HAS_SONG = false;
+        if (playing){ nextT = AC.currentTime + 0.06; stepN = 0; clearInterval(beatTimer); beatTimer = setInterval(scheduler, 25); }
+      });
+      AC.createMediaElementSource(song).connect(master);
+    }
+    song.currentTime = 0; song.play().catch(() => {});
+  } else {
+    nextT = AC.currentTime + 0.06; stepN = 0;
+    clearInterval(beatTimer);
+    beatTimer = setInterval(scheduler, 25);
+  }
+  const np = $("#np"); np.textContent = "\u266A trap beat playing \u266A"; np.className = "nowplaying on";
+}
+function stopBeat(){
+  if (!AC || !playing) return;
+  playing = false;
+  master.gain.setTargetAtTime(0, AC.currentTime, 0.35);   // fade out
+  setTimeout(() => { if (!playing){ clearInterval(beatTimer); if (song) song.pause(); } }, 1800);
+  const np = $("#np"); np.innerHTML = "&nbsp;"; np.className = "nowplaying";
+}
+$("#mute").addEventListener("click", () => {
+  muted = !muted;
+  $("#mute").innerHTML = muted ? "&#128263; Beat: OFF" : "&#128266; Beat: ON";
+  if (AC && playing) master.gain.setTargetAtTime(muted ? 0 : 0.85, AC.currentTime, 0.05);
+});
+
+/* =====================================================================
+   VISUALS: neon bokeh background + circular beat visualizer around GO
+   ===================================================================== */
+let bass = 0, level = 0;
+
+const bk = $("#bokeh"), bg = bk.getContext("2d");
+const HUES = [18, 8, 330, 280, 215, 35];
+const blobs = Array.from({length: 38}, () => ({
+  x: Math.random(), y: Math.random(), r: 14 + Math.random() * 56,
+  vx: (Math.random() - .5) * 0.00018, vy: (Math.random() - .5) * 0.00014,
+  h: HUES[Math.floor(Math.random() * HUES.length)], a: 0.07 + Math.random() * 0.12,
+  ph: Math.random() * 6.28
+}));
+function sizeBokeh(){
+  const d = window.devicePixelRatio || 1;
+  bk.width = innerWidth * d; bk.height = innerHeight * d; bg.setTransform(d, 0, 0, d, 0, 0);
+}
+function drawBokeh(t){
+  const w = innerWidth, h = innerHeight;
+  bg.globalCompositeOperation = "source-over";
+  bg.fillStyle = "#07060d"; bg.fillRect(0, 0, w, h);
+  bg.globalCompositeOperation = "lighter";
+  for (const b of blobs){
+    b.x += b.vx * 16; b.y += b.vy * 16;
+    if (b.x < -0.1) b.x = 1.1; if (b.x > 1.1) b.x = -0.1;
+    if (b.y < -0.1) b.y = 1.1; if (b.y > 1.1) b.y = -0.1;
+    const pulse = 1 + bass * 0.55 + Math.sin(t / 900 + b.ph) * 0.06;
+    const r = b.r * pulse, x = b.x * w, y = b.y * h;
+    const a = b.a * (1 + bass * 2.2);
+    const g = bg.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `hsla(${b.h},100%,62%,${a})`);
+    g.addColorStop(0.7, `hsla(${b.h},100%,55%,${a * 0.75})`);
+    g.addColorStop(1, `hsla(${b.h},100%,50%,0)`);
+    bg.fillStyle = g; bg.beginPath(); bg.arc(x, y, r, 0, 6.2832); bg.fill();
+  }
+}
+
+const vz = $("#viz"), vg = vz.getContext("2d");
+function sizeViz(){
+  const d = window.devicePixelRatio || 1, s = vz.clientWidth;
+  vz.width = s * d; vz.height = s * d; vg.setTransform(d, 0, 0, d, 0, 0);
+}
+function drawViz(t){
+  const s = vz.clientWidth, c = s / 2;
+  vg.clearRect(0, 0, s, s);
+  const BARS = 72, inner = s * 0.31, maxLen = s * 0.17;
+  vg.lineCap = "round"; vg.lineWidth = Math.max(2.5, s * 0.011);
+  for (let i = 0; i < BARS; i++){
+    const ang = (i / BARS) * Math.PI * 2 - Math.PI / 2;
+    const m = i < BARS / 2 ? i : BARS - 1 - i;            // mirror left/right
+    const bin = Math.floor(m * 0.9) + 1;
+    let v = freqData ? freqData[bin] / 255 : 0;
+    const idle = 0.05 + 0.04 * Math.sin(t / 420 + i * 0.5);
+    v = Math.max(idle, Math.pow(v, 1.35));
+    const len = 3 + v * maxLen;
+    const x1 = c + Math.cos(ang) * inner, y1 = c + Math.sin(ang) * inner;
+    const x2 = c + Math.cos(ang) * (inner + len), y2 = c + Math.sin(ang) * (inner + len);
+    const hue = (28 + (i / BARS) * 320 + t / 40) % 360;
+    vg.strokeStyle = `hsl(${hue},100%,64%)`;
+    vg.shadowColor = `hsl(${hue},100%,60%)`; vg.shadowBlur = 8 + v * 14;
+    vg.beginPath(); vg.moveTo(x1, y1); vg.lineTo(x2, y2); vg.stroke();
+  }
+  vg.shadowBlur = 0;
+}
+function frame(t){
+  if (analyser){
+    analyser.getByteFrequencyData(freqData);
+    let b = 0; for (let i = 0; i < 5; i++) b += freqData[i];
+    const target = b / 5 / 255;
+    bass += (target - bass) * (target > bass ? 0.6 : 0.12);
+  } else bass *= 0.9;
+  level = bass;
+  $("#gobox").style.transform = `scale(${1 + Math.pow(bass, 2) * 0.12})`;
+  $("#go").style.boxShadow =
+    `0 0 0 5px rgba(255,255,255,.12),0 0 ${34 + bass * 50}px ${6 + bass * 12}px rgba(255,110,90,${0.5 + bass * 0.4}),0 0 ${70 + bass * 60}px ${14 + bass * 16}px rgba(190,70,255,${0.25 + bass * 0.3})`;
+  drawBokeh(t); drawViz(t); drawChart(t);
+  requestAnimationFrame(frame);
+}
+addEventListener("resize", () => { sizeBokeh(); sizeViz(); drawChart(); });
+
+/* ---------- Your connection (only what a browser is allowed to see) ---------- */
+function renderConn(){
+  const box = $("#wifi"), note = $("#wifinote");
+  const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  let html = row("Status", navigator.onLine ? "Online" : "Offline");
+  if (c){
+    if (c.type) html += row("Connection type", esc(c.type));
+    if (c.effectiveType) html += row("Network quality", esc(String(c.effectiveType).toUpperCase()));
+    if (c.downlink != null) html += row("Estimated downlink", `${c.downlink} Mbps`);
+    if (c.rtt != null) html += row("Estimated round-trip", `${c.rtt} ms`);
+    if (c.saveData) html += row("Data saver", "On");
+  } else {
+    html += row("Details", "Not provided by this browser");
+  }
+  box.innerHTML = html;
+  note.textContent = "Websites cannot read your Wi-Fi name or signal strength. Only the Python desktop version can show those.";
+  note.hidden = false;
+}
+
+async function doWifi(){
+  setStep("wifi", "on");
+  renderConn();
+  await sleep(300);
+  setStep("wifi", "done");
+}
+
+/* ---------- public IP / ISP ---------- */
+async function doInternetInfo(){
+  try{
+    const m = await (await fetch("https://speed.cloudflare.com/meta", {cache:"no-store"})).json();
+    $("#isp").textContent = m.asOrganization || "—";
+    $("#ip").textContent = m.clientIp || "—";
+    $("#loc").textContent = [m.city, m.region, m.country].filter(Boolean).join(", ") || "—";
+    $("#srv").textContent = m.colo && (m.colo.city || m.colo.iata) ? `Cloudflare, ${m.colo.city || m.colo.iata}` : "Cloudflare";
+    return;
+  }catch(e){}
+  try{
+    const m = await (await fetch("https://ipinfo.io/json")).json();
+    $("#isp").textContent = (m.org || "—").replace(/^AS\d+\s*/, "");
+    $("#ip").textContent = m.ip || "—";
+    $("#loc").textContent = [m.city, m.region, m.country].filter(Boolean).join(", ") || "—";
+    $("#srv").textContent = "—";
+  }catch(e){
+    $("#isp").textContent = "Unavailable (offline or blocked)";
+  }
+}
+
+/* ---------- ping ---------- */
+let chartLo = 0, chartHi = 100, shown = [];
+function drawChart(t){
+  t = t || performance.now();
+  const c = $("#chart"), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (!w || !h) return;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)){
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  }
+  const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const line = "rgba(255,255,255,0.13)", muted = "#a79fc4", accent = "#ff5fa2", bad = "#f87171";
+  const L = 34, T = 10, B = 18, pw = w - L - 10, ph = h - T - B;
+
+  // zoom the y-axis to the real data so small changes are visible (smoothly animated)
+  const vals = pings.map(p => p.ms).filter(v => v != null);
+  let tLo = 0, tHi = 100;
+  if (vals.length){
+    const mn = Math.min(...vals), mx = Math.max(...vals);
+    const span = Math.max(20, (mx - mn) * 1.6), mid = (mx + mn) / 2;
+    tLo = Math.max(0, mid - span / 2); tHi = tLo + span;
+  }
+  chartLo += (tLo - chartLo) * 0.1; chartHi += (tHi - chartHi) * 0.1;
+  const range = Math.max(1, chartHi - chartLo);
+  const Y = v => T + ph * (1 - (v - chartLo) / range);
+
+  g.font = "11px system-ui, sans-serif"; g.fillStyle = muted; g.strokeStyle = line; g.lineWidth = 1;
+  for (let i = 0; i <= 3; i++){
+    const y = T + ph * i / 3;
+    g.beginPath(); g.moveTo(L, y); g.lineTo(L + pw, y); g.stroke();
+    g.fillText(Math.round(chartHi - range * i / 3), 2, y + 4);
+  }
+
+  // idle: a gentle moving wave until the pings come in
+  if (!pings.length){
+    shown = [];
+    g.strokeStyle = "rgba(255,95,162,.45)"; g.lineWidth = 2; g.beginPath();
+    for (let x = 0; x <= pw; x += 4){
+      const y = T + ph / 2 + Math.sin(x / 26 + t / 380) * (6 + bass * 18);
+      x === 0 ? g.moveTo(L + x, y) : g.lineTo(L + x, y);
+    }
+    g.stroke();
+    return;
+  }
+
+  // ease each point toward its value; new points glide in from the previous one
+  shown.length = pings.length;
+  pings.forEach((p, i) => {
+    if (p.ms == null){ shown[i] = null; return; }
+    if (shown[i] == null) shown[i] = (i > 0 && shown[i - 1] != null) ? shown[i - 1] : p.ms;
+    shown[i] += (p.ms - shown[i]) * 0.16;
+  });
+  const n = Math.max(pings.length, 2);
+  const X = i => L + pw * i / (n - 1);
+  const wob = i => Math.sin(t / 260 + i * 0.9) * (1 + bass * 6);   // ripples with the beat
+
+  const segs = []; let cur = []; const flat = [];
+  pings.forEach((p, i) => {
+    if (shown[i] == null){ if (cur.length) segs.push(cur); cur = []; return; }
+    const pt = {x: X(i), y: Y(shown[i]) + wob(i)};
+    cur.push(pt); flat.push(pt);
+  });
+  if (cur.length) segs.push(cur);
+
+  const trace = s => {
+    g.moveTo(s[0].x, s[0].y);
+    for (let k = 1; k < s.length - 1; k++){
+      g.quadraticCurveTo(s[k].x, s[k].y, (s[k].x + s[k + 1].x) / 2, (s[k].y + s[k + 1].y) / 2);
+    }
+    if (s.length > 1) g.lineTo(s[s.length - 1].x, s[s.length - 1].y);
+  };
+  segs.forEach(s => {
+    if (s.length < 2) return;
+    const fill = g.createLinearGradient(0, T, 0, T + ph);
+    fill.addColorStop(0, "rgba(255,95,162,.30)"); fill.addColorStop(1, "rgba(255,95,162,0)");
+    g.beginPath(); trace(s);
+    g.lineTo(s[s.length - 1].x, T + ph); g.lineTo(s[0].x, T + ph); g.closePath();
+    g.fillStyle = fill; g.fill();
+    g.beginPath(); trace(s);
+    g.strokeStyle = accent; g.lineWidth = 2.2 + bass * 2; g.lineJoin = "round";
+    g.shadowColor = accent; g.shadowBlur = 8 + bass * 22; g.stroke(); g.shadowBlur = 0;
+  });
+
+  pings.forEach((p, i) => {            // lost pings show as red dots on the bottom line
+    if (p.ms == null){ g.fillStyle = bad; g.beginPath(); g.arc(X(i), T + ph, 3.5, 0, 7); g.fill(); }
+  });
+  flat.forEach(pt => { g.fillStyle = accent; g.beginPath(); g.arc(pt.x, pt.y, 3, 0, 7); g.fill(); });
+
+  if (flat.length){                    // pulsing ring on the newest point
+    const last = flat[flat.length - 1], pulse = (t / 700) % 1;
+    g.strokeStyle = `rgba(255,95,162,${1 - pulse})`; g.lineWidth = 2;
+    g.beginPath(); g.arc(last.x, last.y, 4 + pulse * 10 + bass * 6, 0, 7); g.stroke();
+  }
+  if (flat.length > 1){                // a light that keeps travelling along the line
+    const f = ((t / 2200) % 1) * (flat.length - 1), i0 = Math.floor(f), fr = f - i0;
+    const a = flat[i0], b2 = flat[Math.min(i0 + 1, flat.length - 1)];
+    const sx = a.x + (b2.x - a.x) * fr, sy = a.y + (b2.y - a.y) * fr;
+    g.shadowColor = "#fff"; g.shadowBlur = 14 + bass * 16; g.fillStyle = "#fff";
+    g.beginPath(); g.arc(sx, sy, 3.2 + bass * 3, 0, 7); g.fill(); g.shadowBlur = 0;
+  }
+}
+
+function pingStats(){
+  const v = pings.map(p => p.ms).filter(x => x != null);
+  const lost = pings.length - v.length;
+  let jit = null;
+  if (v.length > 1){
+    let s = 0; for (let i = 1; i < v.length; i++) s += Math.abs(v[i] - v[i-1]);
+    jit = s / (v.length - 1);
+  }
+  return {
+    sent: pings.length, got: v.length, lost,
+    loss: pings.length ? lost / pings.length * 100 : null,
+    min: v.length ? Math.min(...v) : null,
+    avg: v.length ? v.reduce((a, b) => a + b, 0) / v.length : null,
+    max: v.length ? Math.max(...v) : null, jit
+  };
+}
+
+function showPing(){
+  const s = pingStats();
+  $("#pingv").textContent = s.avg == null ? "—" : Math.round(s.avg);
+  $("#jitv").textContent = f1(s.jit);
+  $("#lossv").textContent = s.loss == null ? "—" : s.loss.toFixed(0) + "%";
+  $("#smin").textContent = f1(s.min); $("#savg").textContent = f1(s.avg);
+  $("#smax").textContent = f1(s.max); $("#scnt").textContent = `${s.sent} / ${s.got}`;
+  drawChart();
+  return s;
+}
+
+/* One "ping" = time for a tiny request to Cloudflare to come back (HTTP latency). */
+async function pingOnce(){
+  const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 3000);
+  const t0 = performance.now();
+  try{
+    const r = await fetch("https://speed.cloudflare.com/__down?bytes=0&r=" + Math.random(), {cache: "no-store", signal: ctrl.signal});
+    await r.arrayBuffer();
+    return {ok: true, ms: performance.now() - t0};
+  }catch(e){
+    return {ok: false};
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+async function doPing(){
+  setStep("ping", "on");
+  const count = Math.max(1, Math.min(100, parseInt($("#count").value, 10) || 10));
+  pings = [];
+  await pingOnce();                 // warm-up: opens the connection so it is not counted
+  for (let i = 0; i < count; i++){
+    const r = await pingOnce();
+    pings.push({ms: r.ok ? r.ms : null});
+    showPing();
+    setRing(0.1 + 0.25 * (i + 1) / count);
+    await sleep(400);
+  }
+  R.ping = showPing();
+  setStep("ping", R.ping.got ? "done" : "fail");
+}
+
+/* ---------- download / upload (Cloudflare speed test servers) ---------- */
+async function doDown(){
+  setStep("down", "on");
+  const SECS = 8, STREAMS = 4;
+  let bytes = 0, stop = false;
+  const ctrl = new AbortController(), t0 = performance.now();
+  const timer = setTimeout(() => { stop = true; ctrl.abort(); }, SECS * 1000);
+  const tick = setInterval(() => {
+    const s = (performance.now() - t0) / 1000;
+    $("#down").textContent = f2(mbps(bytes, s));
+    setRing(0.35 + 0.35 * Math.min(1, s / SECS));
+  }, 200);
+  try{
+    await Promise.all(Array.from({length: STREAMS}, async () => {
+      while (!stop){
+        const r = await fetch("https://speed.cloudflare.com/__down?bytes=25000000&r=" + Math.random(),
+                              {cache: "no-store", signal: ctrl.signal});
+        const rd = r.body.getReader();
+        for (;;){ const {done, value} = await rd.read(); if (done) break; bytes += value.length; }
+      }
+    }));
+  }catch(e){ if (bytes === 0){ clearInterval(tick); clearTimeout(timer); setStep("down", "fail"); $("#down").textContent = "\u2014"; throw new Error("Download test could not reach the speed server"); } }
+  clearInterval(tick); clearTimeout(timer);
+  R.down = mbps(bytes, (performance.now() - t0) / 1000);
+  $("#down").textContent = f2(R.down);
+  setStep("down", "done");
+}
+
+function doUp(){
+  setStep("up", "on");
+  return new Promise((resolve, reject) => {
+    const SECS = 7, STREAMS = 3;
+    const buf = new Uint8Array(4 * 1024 * 1024);
+    for (let i = 0; i < buf.length; i += 65536) crypto.getRandomValues(buf.subarray(i, i + 65536));
+    const payload = new Blob([buf]);
+    let sent = 0, stopped = false;
+    const xhrs = new Set(), t0 = performance.now();
+    const tick = setInterval(() => {
+      const s = (performance.now() - t0) / 1000;
+      $("#up").textContent = f2(mbps(sent, s));
+      setRing(0.7 + 0.3 * Math.min(1, s / SECS));
+    }, 200);
+    const finish = () => {
+      stopped = true; clearInterval(tick); xhrs.forEach(x => x.abort());
+      if (sent === 0){ setStep("up", "fail"); $("#up").textContent = "\u2014"; return reject(new Error("Upload test could not reach the speed server.")); }
+      R.up = mbps(sent, (performance.now() - t0) / 1000);
+      $("#up").textContent = f2(R.up);
+      setStep("up", "done"); resolve();
+    };
+    const launch = () => {
+      if (stopped) return;
+      const x = new XMLHttpRequest(); xhrs.add(x); let last = 0;
+      x.open("POST", "https://speed.cloudflare.com/__up?r=" + Math.random());
+      x.upload.onprogress = e => { sent += e.loaded - last; last = e.loaded; };
+      x.onload = () => { xhrs.delete(x); launch(); };
+      x.onerror = () => { xhrs.delete(x); if (sent === 0 && !xhrs.size) finish(); };
+      x.send(payload);
+    };
+    for (let i = 0; i < STREAMS; i++) launch();
+    setTimeout(finish, SECS * 1000);
+  });
+}
+
+/* ---------- what can you do ---------- */
+function rate(){
+  const p = R.ping || {}, d = R.down, u = R.up;
+  const out = [];
+  const tag = (name, level, why) => out.push({name, level, why});
+  if (p.got){
+    const g = p.avg < 50 && p.jit < 15 && p.loss === 0 ? "Great" : p.avg < 100 && p.loss < 2 ? "OK" : "Poor";
+    tag("Gaming", g, `ping ${Math.round(p.avg)} ms`);
+  } else tag("Gaming", "—", "no ping data");
+  if (d != null) tag("Web browsing", d >= 5 ? "Great" : d >= 2 ? "OK" : "Poor", `${f1(d)} Mbps down`);
+  else tag("Web browsing", "—", "no speed data");
+  if (d != null) tag("HD / 4K video", d >= 25 ? "Great" : d >= 10 ? "OK" : "Poor", `${f1(d)} Mbps down`);
+  else tag("HD / 4K video", "—", "no speed data");
+  if (d != null && u != null && p.got){
+    const v = d >= 3 && u >= 3 && p.jit < 30 && p.loss < 2 ? "Great" : u >= 1 && p.jit < 50 ? "OK" : "Poor";
+    tag("Video calls", v, `${f1(u)} Mbps up`);
+  } else tag("Video calls", "—", "needs ping + speed");
+  const color = {Great: "var(--good)", OK: "var(--warn)", Poor: "var(--bad)"};
+  $("#rate").innerHTML = out.map(o =>
+    `<div class="chip"><span>${o.name}</span><b style="color:${color[o.level] || "var(--muted)"}">${o.level}</b> <span style="display:inline">${esc(o.why)}</span></div>`
+  ).join("");
+}
+
+/* ---------- run everything ---------- */
+async function runTest(){
+  if (busy) return;
+  busy = true; R = {}; pings = [];
+  startBeat();                       // inside the click, so the browser allows sound
+  const go = $("#go");
+  go.disabled = true; go.textContent = "Testing…";
+  ["#down", "#up", "#pingv", "#jitv", "#lossv", "#smin", "#savg", "#smax", "#scnt"].forEach(s => $(s).textContent = "—");
+  $("#rate").innerHTML = "";
+  document.querySelectorAll("#steps li").forEach(li => li.className = "");
+  setRing(0.02); drawChart();
+  const errors = [];
+  const attempt = async fn => { try { await fn(); } catch(e){ errors.push(e.message || String(e)); } };
+  const info = doInternetInfo();
+  await attempt(doWifi);
+  setRing(0.1);
+  await attempt(doPing);
+  await attempt(doDown);
+  await attempt(doUp);
+  await info;
+  setRing(1); rate();
+  if (errors.length){
+    const n = $("#wifinote");
+    n.hidden = false;
+    n.textContent = "Some steps could not finish: " + [...new Set(errors.map(e => e.replace(/\.$/, "")))].join(" | ") +
+      ". Speed tests need internet access to speed.cloudflare.com (some school or office networks block it).";
+  }
+  // the music keeps playing after the test; pressing GO again restarts the beat
+  go.disabled = false; go.textContent = "GO"; busy = false;
+}
+
+$("#go").addEventListener("click", runTest);
+sizeBokeh(); sizeViz(); drawChart();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
