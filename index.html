@@ -399,14 +399,67 @@ function renderConn(){
     html += row("Details", "Not provided by this browser");
   }
   box.innerHTML = html;
-  note.textContent = "Websites cannot read your Wi-Fi name or signal strength. Only the Python desktop version can show those.";
   note.hidden = false;
+}
+
+function renderWifi(w){
+  const box = $("#wifi"), note = $("#wifinote");
+  note.hidden = true;
+  if (!w || w.supported === false){
+    box.innerHTML = row("Status", "Wi-Fi details not available on this system");
+    return;
+  }
+  if (w.needs_location){
+    box.innerHTML = row("Status", "Windows is hiding the Wi-Fi name");
+    note.textContent = "Turn on Location: Settings > Privacy & security > Location, then allow desktop apps, and click GO again.";
+    note.hidden = false;
+    return;
+  }
+  if (!w.connected){
+    box.innerHTML = row("Status", "Not connected to Wi-Fi") + row("Connection", "Wired (Ethernet) or offline");
+    return;
+  }
+  const s = w.signal;
+  const lit = s == null ? 0 : s >= 75 ? 4 : s >= 50 ? 3 : s >= 25 ? 2 : 1;
+  const label = s == null ? "" : s >= 75 ? "Excellent" : s >= 50 ? "Good" : s >= 25 ? "Weak" : "Very weak";
+  const bars = `<span class="bars">${[1,2,3,4].map(i => `<i class="${i <= lit ? "f" : ""}"></i>`).join("")}</span>`;
+  let html = row("Wi-Fi name", esc(w.ssid || "(hidden or unavailable)"));
+  html += row("Signal", s == null ? "—" : `${bars}${s}% ${label}${w.dbm != null ? ` (${w.dbm} dBm)` : ""}`);
+  const bc = [w.band, w.channel ? "channel " + w.channel : ""].filter(Boolean).join(", ");
+  if (bc) html += row("Band / channel", esc(bc));
+  if (w.radio) html += row("Wi-Fi standard", esc(w.radio));
+  if (w.rx != null || w.tx != null) html += row("Link speed", `${f1(w.rx)} down / ${f1(w.tx)} up Mbps`);
+  if (w.auth) html += row("Security", esc(w.auth));
+  if (w.adapter) html += row("Adapter", esc(w.adapter));
+  box.innerHTML = html;
+}
+
+const HELPER_URL = "http://127.0.0.1:8765/api/wifi";
+
+async function getHelperWifi(){
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 2500);
+  try{
+    const r = await fetch(HELPER_URL, {cache: "no-store", signal: ctrl.signal});
+    if (!r.ok) return null;
+    const w = await r.json();
+    return (w && typeof w === "object" && "supported" in w) ? w : null;
+  }catch(e){ return null; }
+  finally{ clearTimeout(t); }
 }
 
 async function doWifi(){
   setStep("wifi", "on");
-  renderConn();
-  await sleep(300);
+  const w = await getHelperWifi();
+  if (w){
+    renderWifi(w);               // real Wi-Fi name, signal, band, link speed
+  } else {
+    renderConn();                // browser-only info
+    $("#wifinote").innerHTML =
+      "Websites cannot read your Wi-Fi name on their own. To show it, run <b>python wifi_helper.py</b> " +
+      "on this PC (see README), keep it open, then click GO again. " +
+      "If it is running, allow this site to access local devices when your browser asks.";
+  }
   setStep("wifi", "done");
 }
 
